@@ -4,7 +4,8 @@ import re
 import unicodedata
 from io import BytesIO
 from fuzzywuzzy import fuzz, process 
-import xlsxwriter # Cần thiết cho việc tạo và tải file Excel
+import xlsxwriter
+import plotly.express as px # <--- THƯ VIỆN MỚI
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="Tiện Ích Chuẩn Hóa (FAST)", layout="centered")
@@ -22,13 +23,12 @@ def xoa_dau_tieng_viet(text):
     text = re.sub(r'\s+', ' ', text)
     return text
 
-# --- HÀM 1A: ĐỌC FILE (Đã Tối Ưu Cache) ---
+# --- HÀM 1A: ĐỌC FILE ---
 @st.cache_data(show_spinner="Đang tải và đọc file lớn (Chỉ chạy lần đầu)...")
 def doc_file_data(uploaded_file):
     """Hàm cache chuyên đọc file, chỉ chạy lại khi file thay đổi."""
     try:
         engine = 'pyxlsb' if uploaded_file.name.endswith('.xlsb') else 'openpyxl'
-        # Dùng io.BytesIO để đảm bảo cache hoạt động tốt với file object
         df = pd.read_excel(BytesIO(uploaded_file.getvalue()), engine=engine)
         return df
     except Exception as e:
@@ -40,7 +40,6 @@ def doc_file_data(uploaded_file):
 def tao_file_excel(df_input):
     """Tạo file Excel từ DataFrame để tải xuống."""
     output = BytesIO()
-    # Dùng xlsxwriter cho tốc độ và khả năng tương thích
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
     df_input.to_excel(writer, index=False, sheet_name='DanhSachTrungLap')
     writer.close()
@@ -54,12 +53,11 @@ def hien_thi_nhap_lieu():
 
     if uploaded_file is not None:
         st.success(f"✅ Đã tải lên file: {uploaded_file.name}")
-        
         df = doc_file_data(uploaded_file)
         
         if df is not None:
             cols = df.columns.tolist()
-            default_index = cols.index('hoTen') if 'hoTen' in cols else 0
+            default_index = cols.index('hoTen') if 'hoTen' in cols and len(cols) > cols.index('hoTen') else 0
 
             selected_col = st.selectbox(
                 "📋 Chọn cột dữ liệu cần Chuẩn hóa (Ví dụ: hoTen, diaChi):", 
@@ -122,21 +120,54 @@ def tim_kiem_gan_dung(df_input, cot_cleaned):
     
     return
 
-# --- BƯỚC 4: KIỂM TRA TRÙNG LẶP (Chỉ trả về Data) ---
+# --- BƯỚC 4A: HÀM LOGIC KIỂM TRA TRÙNG LẶP (Chỉ trả về Data) ---
 @st.cache_data(show_spinner="Đang kiểm tra trùng lặp trên tổ hợp...")
 def kiem_tra_trung_lap(df, list_cot_kiem_tra):
     if not list_cot_kiem_tra:
-        return pd.DataFrame() # Trả về DataFrame rỗng nếu không có cột nào được chọn
+        return pd.DataFrame() 
         
-    # Dùng .duplicated(subset=list, keep=False) để đánh dấu TẤT CẢ các bản ghi trùng lặp
     is_duplicate = df.duplicated(subset=list_cot_kiem_tra, keep=False)
-    
-    # Lọc ra các bản ghi bị trùng lặp
     df_trung = df[is_duplicate].sort_values(by=list_cot_kiem_tra)
     
-    return df_trung # CHỈ TRẢ VỀ DATAFRAME
+    return df_trung 
 
-# --- HÀM GIAO DIỆN KIỂM TRA TRÙNG LẶP NÂNG CAO (Xử lý UI và Download) ---
+# --- BƯỚC 4B: HÀM TẠO BIỂU ĐỒ PHÂN TÍCH ĐỊA LÝ (MỚI) ---
+def tao_bieu_do_phan_tich_dia_ly(df_trung, cot_vi_tri='noiKhaiSinh'):
+    st.markdown("### 📊 Phân tích Địa lý: Top Địa điểm có Trùng lặp")
+    
+    if cot_vi_tri not in df_trung.columns:
+        st.warning(f"Cột '{cot_vi_tri}' không tồn tại trong dữ liệu trùng lặp để phân tích.")
+        return
+        
+    # Tính số lượng trùng lặp theo địa lý
+    df_chart = df_trung.groupby(cot_vi_tri).size().reset_index(name='SoLuongTrungLap')
+    
+    # Lấy Top 10 địa điểm có số lượng trùng lặp cao nhất
+    df_chart = df_chart.sort_values(by='SoLuongTrungLap', ascending=False).head(10)
+    
+    if df_chart.empty:
+        st.info("Không có dữ liệu trùng lặp để phân tích địa lý.")
+        return
+
+    # Tạo biểu đồ Bar Chart tương tác bằng Plotly
+    fig = px.bar(
+        df_chart, 
+        x='SoLuongTrungLap', 
+        y=cot_vi_tri, 
+        orientation='h',
+        title=f'Top 10 Địa điểm có số hồ sơ trùng lặp cao nhất theo cột "{cot_vi_tri}"',
+        labels={'SoLuongTrungLap': 'Số lượng Hồ sơ Trùng lặp', cot_vi_tri: 'Địa điểm'},
+        color='SoLuongTrungLap',
+        color_continuous_scale=px.colors.sequential.Reds_r, # Màu đỏ đậm dần cho mức độ trùng lặp cao
+        template="streamlit"
+    )
+    
+    fig.update_layout(yaxis={'categoryorder':'total ascending'})
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# --- HÀM GIAO DIỆN KIỂM TRA TRÙNG LẶP NÂNG CAO (Đã tích hợp Phân tích Địa lý) ---
 def hien_thi_kiem_tra_trung_lap_nang_cao(df):
     st.markdown("---")
     st.subheader("🛠️ KIỂM TRA TRÙNG LẶP NÂNG CAO (Nhiều Cột)")
@@ -152,14 +183,26 @@ def hien_thi_kiem_tra_trung_lap_nang_cao(df):
     
     if st.button("🔍 PHÂN TÍCH TRÙNG LẶP"):
         if list_cot_kiem_tra:
-            # 1. GỌI HÀM CACHE ĐỂ LẤY DỮ LIỆU
             df_trung = kiem_tra_trung_lap(df, list_cot_kiem_tra)
-            
             ten_to_hop = " + ".join(list_cot_kiem_tra)
             
-            # 2. HIỂN THỊ KẾT QUẢ VÀ WIDGET (NGOÀI CACHE)
             if not df_trung.empty:
                 st.error(f"🔴 Tìm thấy **{len(df_trung)}** bản ghi KHẢ NĂNG TRÙNG LẶP dựa trên tổ hợp **{ten_to_hop}**!")
+                
+                # --- PHÂN TÍCH ĐỊA LÝ (MỚI) ---
+                location_cols = [c for c in all_cols if 'noi' in c.lower() or 'dia' in c.lower() or 'xa' in c.lower() or 'huyen' in c.lower() or 'tinh' in c.lower()]
+                
+                if location_cols:
+                    col_dia_ly = st.selectbox(
+                        "Chọn cột Địa lý để phân tích sự phân bố trùng lặp:",
+                        options=location_cols,
+                        index=0
+                    )
+                    # Gọi hàm vẽ biểu đồ
+                    tao_bieu_do_phan_tich_dia_ly(df_trung.copy(), col_dia_ly)
+                else:
+                    st.warning("Không tìm thấy cột có liên quan đến vị trí (Địa chỉ, Nơi sinh, Tỉnh/Huyện) để phân tích địa lý.")
+                # -------------------------------
                 
                 excel_data = tao_file_excel(df_trung) 
                 st.download_button(
@@ -175,7 +218,7 @@ def hien_thi_kiem_tra_trung_lap_nang_cao(df):
         else:
             st.warning("Vui lòng chọn ít nhất một cột để chạy phân tích trùng lặp.")
 
-# --- HÀM MAIN CHÍNH (Đã cập nhật) ---
+# --- HÀM MAIN CHÍNH ---
 def main():
     df_data, cot_chon = hien_thi_nhap_lieu()
     st.markdown("---")
@@ -183,7 +226,6 @@ def main():
     if df_data is not None and cot_chon:
         st.info(f"Tổng cộng **{len(df_data)}** hồ sơ. Đang xử lý cột: **{cot_chon}**")
         
-        # Bước Chuẩn hóa
         df_cleaned, cot_cleaned = xu_ly_chuan_hoa_co_ban(df_data.copy(), cot_chon) 
 
         if df_cleaned is not None and cot_cleaned:
@@ -191,10 +233,8 @@ def main():
             st.dataframe(df_cleaned[[cot_chon, cot_cleaned]].head(20), use_container_width=True)
             st.markdown("---")
             
-            # Bước Tìm kiếm Gần đúng
             tim_kiem_gan_dung(df_cleaned, cot_cleaned)
             
-            # Bước Kiểm tra Trùng lặp Nâng cao
             hien_thi_kiem_tra_trung_lap_nang_cao(df_cleaned.copy())
 
 # --- CHẠY CHƯƠNG TRÌNH ---
