@@ -1,0 +1,7 @@
+streamlit
+pandas
+openpyxl
+pyxlsb
+fuzzywuzzy
+python-levenshtein
+xlsxwriter  # <-- Thêm dòng này
