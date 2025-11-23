@@ -131,13 +131,16 @@ def kiem_tra_trung_lap(df, list_cot_kiem_tra):
     
     return df_trung 
 
-# --- BƯỚC 4B: HÀM TẠO BIỂU ĐỒ PHÂN TÍCH ĐỊA LÝ (MỚI) ---
+# --- BƯỚC 4B: HÀM TẠO BIỂU ĐỒ PHÂN TÍCH ĐỊA LÝ (ĐÃ SỬA LỖI) ---
 def tao_bieu_do_phan_tich_dia_ly(df_trung, cot_vi_tri='noiKhaiSinh'):
     st.markdown("### 📊 Phân tích Địa lý: Top Địa điểm có Trùng lặp")
     
     if cot_vi_tri not in df_trung.columns:
         st.warning(f"Cột '{cot_vi_tri}' không tồn tại trong dữ liệu trùng lặp để phân tích.")
         return
+        
+    # FIX LỖI: Buộc kiểu dữ liệu cột vị trí thành chuỗi (categorical)
+    df_trung[cot_vi_tri] = df_trung[cot_vi_tri].astype(str).str.strip() 
         
     # Tính số lượng trùng lặp theo địa lý
     df_chart = df_trung.groupby(cot_vi_tri).size().reset_index(name='SoLuongTrungLap')
@@ -148,6 +151,8 @@ def tao_bieu_do_phan_tich_dia_ly(df_trung, cot_vi_tri='noiKhaiSinh'):
     if df_chart.empty:
         st.info("Không có dữ liệu trùng lặp để phân tích địa lý.")
         return
+
+    # ... (phần code vẽ biểu đồ bên dưới giữ nguyên) ...
 
     # Tạo biểu đồ Bar Chart tương tác bằng Plotly
     fig = px.bar(
@@ -240,3 +245,4 @@ def main():
 # --- CHẠY CHƯƠNG TRÌNH ---
 if __name__ == "__main__":
     main()
+
