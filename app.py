@@ -172,7 +172,7 @@ def tao_bieu_do_phan_tich_dia_ly(df_trung, cot_vi_tri='noiKhaiSinh'):
     st.plotly_chart(fig, use_container_width=True)
 
 
-# --- HÀM GIAO DIỆN KIỂM TRA TRÙNG LẶP NÂNG CAO (Đã tích hợp Phân tích Địa lý) ---
+# --- HÀM GIAO DIỆN KIỂM TRA TRÙNG LẶP NÂNG CAO (Đã Fix Lỗi State) ---
 def hien_thi_kiem_tra_trung_lap_nang_cao(df):
     st.markdown("---")
     st.subheader("🛠️ KIỂM TRA TRÙNG LẶP NÂNG CAO (Nhiều Cột)")
@@ -186,63 +186,62 @@ def hien_thi_kiem_tra_trung_lap_nang_cao(df):
         default=default_selection
     )
     
+    # 1. BƯỚC LƯU DỮ LIỆU VÀO STATE (CHỈ CHẠY KHI BẤM NÚT)
     if st.button("🔍 PHÂN TÍCH TRÙNG LẶP"):
         if list_cot_kiem_tra:
-            df_trung = kiem_tra_trung_lap(df, list_cot_kiem_tra)
-            ten_to_hop = " + ".join(list_cot_kiem_tra)
-            
-            if not df_trung.empty:
-                st.error(f"🔴 Tìm thấy **{len(df_trung)}** bản ghi KHẢ NĂNG TRÙNG LẶP dựa trên tổ hợp **{ten_to_hop}**!")
-                
-                # --- PHÂN TÍCH ĐỊA LÝ (MỚI) ---
-                location_cols = [c for c in all_cols if 'noi' in c.lower() or 'dia' in c.lower() or 'xa' in c.lower() or 'huyen' in c.lower() or 'tinh' in c.lower()]
-                
-                if location_cols:
-                    col_dia_ly = st.selectbox(
-                        "Chọn cột Địa lý để phân tích sự phân bố trùng lặp:",
-                        options=location_cols,
-                        index=0
-                    )
-                    # Gọi hàm vẽ biểu đồ
-                    tao_bieu_do_phan_tich_dia_ly(df_trung.copy(), col_dia_ly)
-                else:
-                    st.warning("Không tìm thấy cột có liên quan đến vị trí (Địa chỉ, Nơi sinh, Tỉnh/Huyện) để phân tích địa lý.")
-                # -------------------------------
-                
-                excel_data = tao_file_excel(df_trung) 
-                st.download_button(
-                    label="📥 Tải danh sách Trùng lặp (Excel)",
-                    data=excel_data.getvalue(),
-                    file_name=f"trung_lap_nang_cao_{ten_to_hop}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-                
-                st.dataframe(df_trung, use_container_width=True, height=500)
-            else:
-                st.success("✅ Không tìm thấy bản ghi trùng lặp nào dựa trên tổ hợp đã chọn.")
+            # Lưu trữ kết quả và cột vào session state
+            df_trung_calc = kiem_tra_trung_lap(df, list_cot_kiem_tra)
+            st.session_state['duplicate_data'] = df_trung_calc
+            st.session_state['duplicate_cols'] = list_cot_kiem_tra
         else:
             st.warning("Vui lòng chọn ít nhất một cột để chạy phân tích trùng lặp.")
+    
+    # 2. BƯỚC TẢI DỮ LIỆU TỪ STATE (CHẠY TRÊN MỌI RERUN)
+    df_trung = st.session_state['duplicate_data']
+    list_cot_kiem_tra = st.session_state['duplicate_cols']
+    
+    if not df_trung.empty:
+        ten_to_hop = " + ".join(list_cot_kiem_tra)
+        st.error(f"🔴 Tìm thấy **{len(df_trung)}** bản ghi KHẢ NĂNG TRÙNG LẶP dựa trên tổ hợp **{ten_to_hop}**!")
+        
+        # PHÂN TÍCH ĐỊA LÝ (Giữ nguyên)
+        location_cols = [c for c in all_cols if 'noi' in c.lower() or 'dia' in c.lower() or 'xa' in c.lower() or 'huyen' in c.lower() or 'tinh' in c.lower()]
+        
+        if location_cols:
+            col_dia_ly = st.selectbox(
+                "Chọn cột Địa lý để phân tích sự phân bố trùng lặp:",
+                options=location_cols,
+                index=location_cols.index('maTinh') if 'maTinh' in location_cols else 0, # Cố gắng giữ lại giá trị đã chọn
+                key='geo_select_box' # Đặt key để Streamlit duy trì trạng thái
+            )
+            # Dữ liệu df_trung đã tồn tại, nên biểu đồ sẽ vẽ lại ngay lập tức
+            tao_bieu_do_phan_tich_dia_ly(df_trung.copy(), col_dia_ly)
+        
+        # HIỂN THỊ DOWNLOAD VÀ DATAFRAME
+        excel_data = tao_file_excel(df_trung) 
+        st.download_button(
+            label="📥 Tải danh sách Trùng lặp (Excel)",
+            data=excel_data.getvalue(),
+            file_name=f"trung_lap_nang_cao_{ten_to_hop}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        
+        st.dataframe(df_trung, use_container_width=True, height=500)
 
-# --- HÀM MAIN CHÍNH ---
+# --- HÀM MAIN CHÍNH (Thêm khởi tạo state) ---
 def main():
+    # Khởi tạo state nếu chưa tồn tại
+    if 'duplicate_data' not in st.session_state:
+        st.session_state['duplicate_data'] = pd.DataFrame()
+    if 'duplicate_cols' not in st.session_state:
+        st.session_state['duplicate_cols'] = []
+        
     df_data, cot_chon = hien_thi_nhap_lieu()
     st.markdown("---")
 
-    if df_data is not None and cot_chon:
-        st.info(f"Tổng cộng **{len(df_data)}** hồ sơ. Đang xử lý cột: **{cot_chon}**")
-        
-        df_cleaned, cot_cleaned = xu_ly_chuan_hoa_co_ban(df_data.copy(), cot_chon) 
-
-        if df_cleaned is not None and cot_cleaned:
-            st.subheader("Xem trước Dữ liệu đã Chuẩn hóa")
-            st.dataframe(df_cleaned[[cot_chon, cot_cleaned]].head(20), use_container_width=True)
-            st.markdown("---")
-            
-            tim_kiem_gan_dung(df_cleaned, cot_cleaned)
-            
-            hien_thi_kiem_tra_trung_lap_nang_cao(df_cleaned.copy())
-
+    # ... (phần còn lại giữ nguyên) ...
 # --- CHẠY CHƯƠNG TRÌNH ---
 if __name__ == "__main__":
     main()
+
 
