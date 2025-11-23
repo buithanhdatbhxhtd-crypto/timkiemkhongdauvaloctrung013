@@ -228,7 +228,7 @@ def hien_thi_kiem_tra_trung_lap_nang_cao(df):
         
         st.dataframe(df_trung, use_container_width=True, height=500)
 
-# --- HÀM MAIN CHÍNH (Thêm khởi tạo state) ---
+# --- HÀM MAIN CHÍNH (Đã thêm try/except để Debug) ---
 def main():
     # Khởi tạo state nếu chưa tồn tại
     if 'duplicate_data' not in st.session_state:
@@ -239,9 +239,32 @@ def main():
     df_data, cot_chon = hien_thi_nhap_lieu()
     st.markdown("---")
 
-    # ... (phần còn lại giữ nguyên) ...
+    if df_data is not None and cot_chon:
+        
+        try:
+            st.info(f"Tổng cộng **{len(df_data)}** hồ sơ. Đang xử lý cột: **{cot_chon}**")
+            
+            # Khối code nặng được đặt trong try/except để debug
+            df_cleaned, cot_cleaned = xu_ly_chuan_hoa_co_ban(df_data.copy(), cot_chon) 
+
+            if df_cleaned is not None and cot_cleaned:
+                st.subheader("Xem trước Dữ liệu đã Chuẩn hóa")
+                st.dataframe(df_cleaned[[cot_chon, cot_cleaned]].head(20), use_container_width=True)
+                st.markdown("---")
+                
+                tim_kiem_gan_dung(df_cleaned, cot_cleaned)
+                
+                hien_thi_kiem_tra_trung_lap_nang_cao(df_cleaned.copy())
+                
+        except Exception as e:
+            # In ra lỗi nếu có
+            st.error("🚨 Đã xảy ra lỗi không xác định trong quá trình xử lý dữ liệu!")
+            st.exception(e)
+
 # --- CHẠY CHƯƠNG TRÌNH ---
 if __name__ == "__main__":
     main()
+
+
 
 
